@@ -1,0 +1,6 @@
+{
+  "name": "Explainable ATS Resume Screening System",
+  "description": "An Explainable Skill-Based Resume Screening and Job Recommendation System using rule-based NLP and curated skill relationship mappings.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
