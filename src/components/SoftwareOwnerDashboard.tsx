@@ -33,7 +33,9 @@ import {
   FileText,
   Sparkles,
   ChevronRight,
-  XCircle
+  XCircle,
+  HardDrive,
+  Check
 } from 'lucide-react';
 
 interface SoftwareOwnerDashboardProps {
@@ -74,6 +76,7 @@ interface SoftwareOwnerDashboardProps {
     rawResumeText?: string;
     skills?: string[];
   }) => void;
+  onOpenStorageExplorer?: () => void;
 }
 
 export const SoftwareOwnerDashboard: React.FC<SoftwareOwnerDashboardProps> = ({
@@ -103,7 +106,8 @@ export const SoftwareOwnerDashboard: React.FC<SoftwareOwnerDashboardProps> = ({
   onAddCourse,
   onUpdateCandidate,
   onDeleteCandidate,
-  onAdminCreateCandidate
+  onAdminCreateCandidate,
+  onOpenStorageExplorer
 }) => {
   const [activeTab, setActiveTab] = useState<
     'overview' | 'companies' | 'candidates' | 'jobs' | 'engine' | 'taxonomy' | 'courses' | 'audit'
@@ -185,19 +189,19 @@ export const SoftwareOwnerDashboard: React.FC<SoftwareOwnerDashboardProps> = ({
   });
 
   // Safe weights and thresholds with defaults
-  const safeWeights: ScoringWeights = weights || {
-    skillMatch: 40,
-    projectQuality: 20,
-    experience: 20,
-    education: 10,
-    certification: 10
+  const safeWeights: ScoringWeights = {
+    skillMatch: weights?.skillMatch ?? 40,
+    projectQuality: weights?.projectQuality ?? 20,
+    experience: weights?.experience ?? 20,
+    education: weights?.education ?? 10,
+    certification: weights?.certification ?? 10
   };
 
-  const safeThresholds: ScoringThresholds = thresholds || {
-    excellent: 95,
-    strong: 85,
-    good: 70,
-    moderate: 55
+  const safeThresholds: ScoringThresholds = {
+    excellent: thresholds?.excellent ?? 95,
+    strong: thresholds?.strong ?? 85,
+    good: thresholds?.good ?? 70,
+    moderate: thresholds?.moderate ?? 55
   };
 
   return (
@@ -542,6 +546,73 @@ export const SoftwareOwnerDashboard: React.FC<SoftwareOwnerDashboardProps> = ({
               </div>
             )}
           </div>
+
+          {/* Data Storage & LocalStorage Persistence Architecture */}
+          <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
+              <div className="flex items-center space-x-3">
+                <div className="bg-emerald-50 p-2.5 rounded-2xl text-emerald-600">
+                  <HardDrive className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center space-x-2">
+                    <h3 className="text-base font-bold text-slate-900">Data Storage & Persistence Architecture</h3>
+                    <span className="bg-indigo-100 text-indigo-800 text-[10px] font-bold px-2 py-0.5 rounded-full border border-indigo-200">
+                      30-Day Active Retention
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-500">Full-stack disk persistence (`data/ats_storage.json`) + Client LocalStorage cache</p>
+                </div>
+              </div>
+              <div className="flex items-center space-x-2">
+                {onOpenStorageExplorer && (
+                  <button
+                    onClick={onOpenStorageExplorer}
+                    className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold px-3.5 py-1.5 rounded-xl shadow-sm transition-all flex items-center space-x-1.5"
+                  >
+                    <HardDrive className="w-3.5 h-3.5" />
+                    <span>Inspect 30-Day Stored Database</span>
+                  </button>
+                )}
+                <span className="bg-emerald-100 text-emerald-800 text-[10px] font-bold px-3 py-1 rounded-full border border-emerald-200 flex items-center space-x-1.5 w-fit">
+                  <Check className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>Server Disk Synced (1 Month)</span>
+                </span>
+              </div>
+            </div>
+
+            <div className="bg-slate-50 border border-slate-200 p-4 rounded-2xl text-xs text-slate-700 leading-relaxed">
+              <strong className="text-slate-900 font-bold">Storage Location:</strong> All data is permanently persisted on the <strong className="text-indigo-600 font-mono">Server Disk (`data/ats_storage.json`)</strong> with client-side HTML5 LocalStorage sync. This ensures registered accounts (such as <strong className="text-slate-900 font-mono">aryanmsharma23@gmail.com</strong>), uploaded resumes, ATS scores, evaluated applications, and taxonomy rules remain intact for <strong className="text-emerald-700 font-semibold">1 month (30 days)</strong> across browser reboots, tab closures, and sandbox reloads.
+            </div>
+
+            {/* Storage Keys & Live Counts Grid */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 pt-1">
+              {[
+                { key: 'ats_users', label: 'User Accounts & Credentials', count: `${users.length} Users`, desc: 'Admin, Company/HR & Candidate accounts' },
+                { key: 'ats_companies', label: 'Company Tenants', count: `${companies.length} Companies`, desc: 'Multi-tenant employer profiles & subscriptions' },
+                { key: 'ats_jobs', label: 'Job Postings', count: `${jobs.length} Postings`, desc: 'Requirements, min degree, and skill criteria' },
+                { key: 'ats_candidates', label: 'Candidate Profiles & Resumes', count: `${candidates.length} Profiles`, desc: 'Extracted skills, experience & education' },
+                { key: 'ats_applications', label: 'Job Applications & ATS Scores', count: `${applications.length} Records`, desc: 'Transparent breakdown scores & status' },
+                { key: 'ats_skills_v4', label: 'Skill Taxonomy Dictionary', count: `${knownSkills.length} Skills`, desc: 'Categorized technology taxonomy & aliases' },
+                { key: 'ats_relationships_v4', label: 'Transitive Skill Ontology Map', count: `${relationships.length} Mappings`, desc: 'Implicit skill deduction rules (e.g. Flask -> Python)' },
+                { key: 'ats_weights', label: 'Scoring Algorithm Weights', count: `${safeWeights.skillMatch + safeWeights.projectQuality + safeWeights.experience + safeWeights.education + safeWeights.certification}% Sum`, desc: 'Skill, Project, Exp, Degree & Cert weights' },
+                { key: 'ats_audit_logs', label: 'Audit Trail Records', count: `${auditLogs.length} Events`, desc: 'Timestamped system governance log history' },
+              ].map((item, idx) => (
+                <div key={idx} className="bg-white border border-slate-200 p-3.5 rounded-2xl hover:border-indigo-300 transition-colors">
+                  <div className="flex items-center justify-between">
+                    <span className="font-mono text-[11px] font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded">
+                      {item.key}
+                    </span>
+                    <span className="text-xs font-black text-slate-800">
+                      {item.count}
+                    </span>
+                  </div>
+                  <div className="text-xs font-bold text-slate-900 mt-2">{item.label}</div>
+                  <div className="text-[10px] text-slate-500 mt-0.5">{item.desc}</div>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
       )}
 
@@ -654,11 +725,14 @@ export const SoftwareOwnerDashboard: React.FC<SoftwareOwnerDashboardProps> = ({
       {activeTab === 'candidates' && (
         <div className="space-y-6">
           <CandidateAccountsManager
-            candidates={candidates}
-            users={users}
+            candidates={candidates || []}
+            users={users || []}
+            applications={applications || []}
+            knownSkills={knownSkills || []}
+            relationships={relationships || []}
             onUpdateCandidate={onUpdateCandidate}
             onDeleteCandidate={onDeleteCandidate}
-            onCreateCandidate={onAdminCreateCandidate}
+            onAdminCreateCandidate={onAdminCreateCandidate}
           />
         </div>
       )}

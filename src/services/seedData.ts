@@ -91,6 +91,17 @@ export const INITIAL_USERS: User[] = [
   {
     id: 'user-cand-1',
     name: 'Aryan Sharma',
+    email: 'aryanmsharma23@gmail.com',
+    password: 'password123',
+    role: 'CANDIDATE',
+    title: 'Full Stack & Python Engineer',
+    status: 'active',
+    avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
+    createdAt: '2026-08-01'
+  },
+  {
+    id: 'user-cand-2',
+    name: 'Aryan Sharma (Demo)',
     email: 'aryan@example.com',
     password: 'password123',
     role: 'CANDIDATE',
@@ -442,7 +453,7 @@ export const INITIAL_CANDIDATES: CandidateProfile[] = [
     id: 'cand-prof-1',
     userId: 'user-cand-1',
     fullName: 'Aryan Sharma',
-    email: 'aryan@example.com',
+    email: 'aryanmsharma23@gmail.com',
     phone: '+91 98765 43210',
     location: 'Bangalore, India',
     summary: 'Developer experienced in web development with Python, Flask, Django, and MySQL.',
@@ -486,6 +497,42 @@ export const INITIAL_CANDIDATES: CandidateProfile[] = [
         hasMeasurableResults: false
       }
     ],
+    certifications: [],
+    updatedAt: '2026-08-08'
+  },
+  {
+    id: 'cand-prof-2',
+    userId: 'user-cand-2',
+    fullName: 'Aryan Sharma (Demo)',
+    email: 'aryan@example.com',
+    phone: '+91 98765 43210',
+    location: 'Bangalore, India',
+    summary: 'Developer experienced in web development with Python, Flask, Django, and MySQL.',
+    rawResumeText: 'Flask Developer. Built projects using Django and MySQL. Version control with Git.',
+    extractedSkills: ['Flask', 'Django', 'MySQL', 'Git'],
+    totalExpYears: 2.0,
+    highestDegree: 'Bachelor of Computer Applications (BCA)',
+    education: [
+      {
+        id: 'edu-2',
+        degree: 'Bachelor of Computer Applications (BCA)',
+        fieldOfStudy: 'Computer Science',
+        institution: 'Bangalore University',
+        completionYear: 2024,
+        cgpaPercentage: '82%'
+      }
+    ],
+    experience: [
+      {
+        id: 'exp-2',
+        jobTitle: 'Software Developer',
+        company: 'WebTech',
+        years: 2.0,
+        responsibilities: 'Built backend services using Flask and Django with MySQL database.',
+        technologiesUsed: ['Flask', 'Django', 'MySQL', 'Git']
+      }
+    ],
+    projects: [],
     certifications: [],
     updatedAt: '2026-08-08'
   }

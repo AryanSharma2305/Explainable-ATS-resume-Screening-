@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   User, 
+  UserRole,
   Skill, 
   SkillRelationship, 
   ScoringWeights, 
@@ -31,6 +32,8 @@ import { AuthPage } from './components/AuthPage';
 import { CandidateDashboard } from './components/CandidateDashboard';
 import { RecruiterDashboard } from './components/RecruiterDashboard';
 import { SoftwareOwnerDashboard } from './components/SoftwareOwnerDashboard';
+import { DataStorageExplorerModal } from './components/DataStorageExplorerModal';
+import { fetchServerStorage, syncStorageToServer, StoragePayload } from './services/storageService';
 
 export default function App() {
   // Stored Users (Reconciled with initial users)
@@ -41,7 +44,7 @@ export default function App() {
     // Purge legacy admin if present
     loadedUsers = loadedUsers.filter(u => u.email.toLowerCase() !== 'admin@ats-screener.io');
 
-    // Guarantee admin@gmail.com with admin123 exists and has ADMIN role
+    // Ensure admin@gmail.com with admin123 exists and has ADMIN role
     const adminIndex = loadedUsers.findIndex(u => u.email.toLowerCase() === 'admin@gmail.com');
     if (adminIndex >= 0) {
       loadedUsers[adminIndex] = {
@@ -66,16 +69,31 @@ export default function App() {
       });
     }
 
-    // Ensure company and candidate initial users are always present
-    INITIAL_USERS.forEach(initUser => {
-      const exists = loadedUsers.some(u => u.email.toLowerCase() === initUser.email.toLowerCase());
-      if (!exists) {
-        loadedUsers.push(initUser);
-      }
-    });
+    // Ensure aryanmsharma23@gmail.com user exists
+    const aryanIndex = loadedUsers.findIndex(u => u.email.toLowerCase() === 'aryanmsharma23@gmail.com');
+    if (aryanIndex < 0) {
+      loadedUsers.push({
+        id: 'user-cand-1',
+        name: 'Aryan Sharma',
+        email: 'aryanmsharma23@gmail.com',
+        password: 'password123',
+        role: 'CANDIDATE',
+        title: 'Full Stack & Python Engineer',
+        status: 'active',
+        avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
+        createdAt: '2026-08-01'
+      });
+    }
 
-    return loadedUsers;
+    // Always normalize all user roles to uppercase
+    return loadedUsers.map(u => ({
+      ...u,
+      role: (u.email?.toLowerCase() === 'admin@gmail.com' ? 'ADMIN' : (u.role?.toUpperCase() as UserRole) || 'CANDIDATE')
+    }));
   });
+
+  // Storage Explorer Modal State (30-day retention viewer)
+  const [isStorageExplorerOpen, setIsStorageExplorerOpen] = useState(false);
 
   // Stored Companies
   const [companies, setCompanies] = useState<CompanyTenant[]>(() => {
@@ -197,7 +215,56 @@ export default function App() {
     }
   ]);
 
-  // Sync to LocalStorage
+  // Initial Server Sync on Mount
+  useEffect(() => {
+    fetchServerStorage().then(serverData => {
+      if (!serverData) return;
+      if (serverData.users && serverData.users.length > 0) {
+        setUsers(prev => {
+          const map = new Map<string, User>();
+          // 1. Initial users baseline
+          INITIAL_USERS.forEach(u => map.set(u.email.toLowerCase(), u));
+          // 2. Client prev state
+          prev.forEach(u => map.set(u.email.toLowerCase(), u));
+          // 3. Authoritative server disk state
+          serverData.users.forEach(u => map.set(u.email.toLowerCase(), u));
+
+          // Guarantee aryanmsharma23@gmail.com and admin@gmail.com always exist with valid credentials
+          if (!map.has('aryanmsharma23@gmail.com')) {
+            const aryan = INITIAL_USERS.find(u => u.email.toLowerCase() === 'aryanmsharma23@gmail.com');
+            if (aryan) map.set('aryanmsharma23@gmail.com', aryan);
+          }
+          if (!map.has('admin@gmail.com')) {
+            const admin = INITIAL_USERS.find(u => u.email.toLowerCase() === 'admin@gmail.com');
+            if (admin) map.set('admin@gmail.com', admin);
+          }
+          return Array.from(map.values());
+        });
+      }
+      if (serverData.companies && serverData.companies.length > 0) {
+        setCompanies(serverData.companies);
+      }
+      if (serverData.jobs && serverData.jobs.length > 0) {
+        setJobs(serverData.jobs);
+      }
+      if (serverData.candidates && serverData.candidates.length > 0) {
+        setCandidates(prev => {
+          const map = new Map<string, CandidateProfile>();
+          INITIAL_CANDIDATES.forEach(c => map.set(c.email.toLowerCase(), c));
+          prev.forEach(c => map.set(c.email.toLowerCase(), c));
+          serverData.candidates.forEach(c => map.set(c.email.toLowerCase(), c));
+          return Array.from(map.values());
+        });
+      }
+      if (serverData.applications && serverData.applications.length > 0) {
+        setApplications(serverData.applications);
+      }
+    }).catch(err => {
+      console.warn('Initial server sync warning:', err);
+    });
+  }, []);
+
+  // Sync to LocalStorage & Server File Storage with 30-Day Retention
   useEffect(() => {
     localStorage.setItem('ats_users', JSON.stringify(users));
     localStorage.setItem('ats_companies', JSON.stringify(companies));
@@ -218,7 +285,27 @@ export default function App() {
     localStorage.setItem('ats_jobs', JSON.stringify(jobs));
     localStorage.setItem('ats_candidates', JSON.stringify(candidates));
     localStorage.setItem('ats_applications', JSON.stringify(applications));
-  }, [users, companies, currentUser, skills, relationships, weights, thresholds, projectRules, courses, jobs, candidates, applications]);
+
+    // Save to persistent server file database
+    const timer = setTimeout(() => {
+      syncStorageToServer({
+        users,
+        companies,
+        jobs,
+        candidates,
+        applications,
+        skills,
+        relationships,
+        weights,
+        thresholds,
+        projectRules,
+        courses,
+        auditLogs
+      });
+    }, 600);
+
+    return () => clearTimeout(timer);
+  }, [users, companies, currentUser, skills, relationships, weights, thresholds, projectRules, courses, jobs, candidates, applications, auditLogs]);
 
   // Log Helper
   const addAuditLog = (action: string, details: string) => {
@@ -234,8 +321,15 @@ export default function App() {
 
   // Auth Handlers
   const handleLogin = (user: User) => {
-    setCurrentUser(user);
-    if (user.role === 'CANDIDATE') {
+    const effectiveRole: UserRole = 
+      user.email.toLowerCase() === 'admin@gmail.com' || user.role?.toUpperCase() === 'ADMIN'
+        ? 'ADMIN'
+        : user.role?.toUpperCase() === 'RECRUITER'
+        ? 'RECRUITER'
+        : 'CANDIDATE';
+    const normalizedUser: User = { ...user, role: effectiveRole };
+    setCurrentUser(normalizedUser);
+    if (effectiveRole === 'CANDIDATE') {
       const existing = candidates.find(c => c.userId === user.id || c.email.toLowerCase() === user.email.toLowerCase());
       if (!existing) {
         const newProfile: CandidateProfile = {
@@ -259,7 +353,7 @@ export default function App() {
         setCandidates(prev => [...prev, newProfile]);
       }
     }
-    addAuditLog('USER_LOGIN', `${user.name} logged in as ${user.role}`);
+    addAuditLog('USER_LOGIN', `${user.name} logged in as ${effectiveRole}`);
   };
 
   const handleRegister = (newUser: User) => {
@@ -400,6 +494,14 @@ export default function App() {
 
     setUsers(prev => [...prev, newUser]);
     setCandidates(prev => [...prev, newProfile]);
+    
+    // Save directly to server disk for 30-day continuous retention
+    fetch('/api/auth/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user: newUser, candidateProfile: newProfile })
+    }).catch(err => console.warn('Admin create sync notice:', err));
+
     addAuditLog('ADMIN_CREATED_CANDIDATE', `Created candidate account for ${data.name} (${data.email})`);
   };
 
@@ -495,34 +597,96 @@ export default function App() {
     addAuditLog('PROJECT_RULE_UPDATED', `Updated project rule ${ruleId} points to ${updatedPoints}`);
   };
 
+  // Current Storage Payload for Explorer
+  const currentStoragePayload: StoragePayload = {
+    users,
+    companies,
+    jobs,
+    candidates,
+    applications,
+    skills,
+    relationships,
+    weights,
+    thresholds,
+    projectRules,
+    courses,
+    auditLogs
+  };
+
+  const handleManualSync = () => {
+    syncStorageToServer(currentStoragePayload);
+    addAuditLog('STORAGE_SYNC_MANUAL', 'User initiated manual synchronization to server persistent disk.');
+  };
+
   // IF NOT LOGGED IN -> RENDER AUTH PAGE
   if (!currentUser) {
     return (
-      <AuthPage
-        onLogin={handleLogin}
-        onRegister={handleRegister}
-        existingUsers={users}
-      />
+      <>
+        <AuthPage
+          onLogin={handleLogin}
+          onRegister={handleRegister}
+          existingUsers={users}
+          onOpenStorageExplorer={() => setIsStorageExplorerOpen(true)}
+        />
+        <DataStorageExplorerModal
+          isOpen={isStorageExplorerOpen}
+          onClose={() => setIsStorageExplorerOpen(false)}
+          data={currentStoragePayload}
+          onSyncNow={handleManualSync}
+        />
+      </>
     );
   }
 
   // IF LOGGED IN -> RENDER ONE OF 3 ROLE-PROTECTED PORTALS
+  const effectiveRole: UserRole = 
+    currentUser.email?.toLowerCase() === 'admin@gmail.com' || currentUser.role?.toUpperCase() === 'ADMIN'
+      ? 'ADMIN'
+      : currentUser.role?.toUpperCase() === 'RECRUITER'
+      ? 'RECRUITER'
+      : 'CANDIDATE';
+
+  const effectiveUser: User = {
+    ...currentUser,
+    role: effectiveRole
+  };
+
+  const safeCandidateProfile = activeCandidateProfile || {
+    id: `cand-${currentUser.id}`,
+    userId: currentUser.id,
+    fullName: currentUser.name || 'Candidate',
+    email: currentUser.email,
+    phone: '',
+    location: '',
+    summary: '',
+    rawResumeText: '',
+    extractedSkills: [],
+    education: [],
+    experience: [],
+    projects: [],
+    certifications: [],
+    totalExpYears: 0,
+    highestDegree: 'Bachelor Degree',
+    updatedAt: new Date().toISOString().split('T')[0]
+  };
+
   return (
     <div className="min-h-screen bg-slate-100 text-slate-900 font-sans flex flex-col">
       
       {/* Top Navbar */}
       <Navbar
-        currentUser={currentUser}
+        currentUser={effectiveUser}
         onLogout={handleLogout}
+        onOpenStorageExplorer={() => setIsStorageExplorerOpen(true)}
       />
 
       {/* Main Container View (Role-Protected for All 3 Options) */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
         
         {/* OPTION 1: ADMIN (SOFTWARE OWNER) PORTAL */}
-        {currentUser.role === 'ADMIN' && (
+        {effectiveRole === 'ADMIN' && (
           <SoftwareOwnerDashboard
-            currentUser={currentUser}
+            currentUser={effectiveUser}
             companies={companies}
             users={users}
             jobs={jobs}
@@ -555,13 +719,14 @@ export default function App() {
             onUpdateCandidate={handleUpdateCandidate}
             onDeleteCandidate={handleDeleteCandidate}
             onAdminCreateCandidate={handleAdminCreateCandidate}
+            onOpenStorageExplorer={() => setIsStorageExplorerOpen(true)}
           />
         )}
 
         {/* OPTION 2: COMPANY / HR PORTAL */}
-        {currentUser.role === 'RECRUITER' && (
+        {effectiveRole === 'RECRUITER' && (
           <RecruiterDashboard
-            currentUser={currentUser}
+            currentUser={effectiveUser}
             jobs={jobs}
             applications={applications}
             candidates={candidates}
@@ -597,10 +762,10 @@ export default function App() {
         )}
 
         {/* OPTION 3: CANDIDATE PORTAL */}
-        {currentUser.role === 'CANDIDATE' && activeCandidateProfile && (
+        {effectiveRole === 'CANDIDATE' && (
           <CandidateDashboard
-            currentUser={currentUser}
-            candidate={activeCandidateProfile}
+            currentUser={effectiveUser}
+            candidate={safeCandidateProfile}
             jobs={jobs}
             applications={applications}
             knownSkills={skills}
@@ -626,6 +791,14 @@ export default function App() {
           Software Owner Administration • Company / HR Recruitment & Ranking • Candidate Career Fit & Upskilling
         </p>
       </footer>
+
+      {/* 30-Day Data Storage Explorer Modal */}
+      <DataStorageExplorerModal
+        isOpen={isStorageExplorerOpen}
+        onClose={() => setIsStorageExplorerOpen(false)}
+        data={currentStoragePayload}
+        onSyncNow={handleManualSync}
+      />
 
     </div>
   );

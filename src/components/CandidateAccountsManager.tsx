@@ -33,14 +33,14 @@ import {
 } from 'lucide-react';
 
 interface CandidateAccountsManagerProps {
-  users: User[];
-  candidates: CandidateProfile[];
-  applications: JobApplication[];
-  knownSkills: Skill[];
-  relationships: SkillRelationship[];
+  users?: User[];
+  candidates?: CandidateProfile[];
+  applications?: JobApplication[];
+  knownSkills?: Skill[];
+  relationships?: SkillRelationship[];
   onUpdateCandidate: (updated: CandidateProfile) => void;
   onDeleteCandidate: (candidateId: string, userId: string) => void;
-  onAdminCreateCandidate: (data: {
+  onAdminCreateCandidate?: (data: {
     name: string;
     email: string;
     password?: string;
@@ -51,18 +51,21 @@ interface CandidateAccountsManagerProps {
     rawResumeText?: string;
     skills?: string[];
   }) => void;
+  onCreateCandidate?: (data: any) => void;
 }
 
 export const CandidateAccountsManager: FC<CandidateAccountsManagerProps> = ({
-  users,
-  candidates,
-  applications,
-  knownSkills,
-  relationships,
+  users = [],
+  candidates = [],
+  applications = [],
+  knownSkills = [],
+  relationships = [],
   onUpdateCandidate,
   onDeleteCandidate,
-  onAdminCreateCandidate
+  onAdminCreateCandidate,
+  onCreateCandidate
 }) => {
+  const handleCreateAction = onAdminCreateCandidate || onCreateCandidate || (() => {});
   const [searchQuery, setSearchQuery] = useState('');
   const [skillFilter, setSkillFilter] = useState('ALL');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'WITH_RESUME' | 'NO_RESUME' | 'WITH_APPLICATIONS'>('ALL');
@@ -94,14 +97,19 @@ export const CandidateAccountsManager: FC<CandidateAccountsManagerProps> = ({
   const [createResumeText, setCreateResumeText] = useState('');
   const [createError, setCreateError] = useState<string | null>(null);
 
-  // Merge candidate accounts with candidate profiles
+  // Merge candidate accounts with candidate profiles defensively
   const candidateAccounts = useMemo(() => {
-    const candidateUsers = users.filter(u => u.role === 'CANDIDATE');
+    const safeUsers = Array.isArray(users) ? users : [];
+    const safeCandidates = Array.isArray(candidates) ? candidates : [];
+    const safeApps = Array.isArray(applications) ? applications : [];
+    const safeRels = Array.isArray(relationships) ? relationships : [];
+
+    const candidateUsers = safeUsers.filter(u => u && u.role?.toUpperCase() === 'CANDIDATE');
     return candidateUsers.map(user => {
-      const profile = candidates.find(c => c.userId === user.id || c.email.toLowerCase() === user.email.toLowerCase()) || {
+      const profile = safeCandidates.find(c => c && (c.userId === user.id || c.email?.toLowerCase() === user.email?.toLowerCase())) || {
         id: `cand-${user.id}`,
         userId: user.id,
-        fullName: user.name,
+        fullName: user.name || 'Candidate',
         email: user.email,
         phone: '',
         location: '',
@@ -117,9 +125,9 @@ export const CandidateAccountsManager: FC<CandidateAccountsManagerProps> = ({
         updatedAt: 'Just created'
       };
 
-      const userApps = applications.filter(a => a.candidateUserId === user.id || a.candidateEmail.toLowerCase() === user.email.toLowerCase());
+      const userApps = safeApps.filter(a => a && (a.candidateUserId === user.id || a.candidateEmail?.toLowerCase() === user.email?.toLowerCase()));
       const hasResume = (profile.extractedSkills && profile.extractedSkills.length > 0) || (profile.rawResumeText && profile.rawResumeText.trim().length > 0);
-      const inferred = getTransitiveInferredSkills(profile.extractedSkills || [], relationships);
+      const inferred = getTransitiveInferredSkills(profile.extractedSkills || [], safeRels);
 
       return {
         user,
@@ -131,22 +139,22 @@ export const CandidateAccountsManager: FC<CandidateAccountsManagerProps> = ({
     });
   }, [users, candidates, applications, relationships]);
 
-  // Filter candidates
+  // Filter candidates defensively
   const filteredCandidates = useMemo(() => {
     return candidateAccounts.filter(({ user, profile, userApps, hasResume }) => {
       // Search text
       const q = searchQuery.toLowerCase().trim();
       const matchesSearch = !q || 
-        profile.fullName.toLowerCase().includes(q) ||
-        profile.email.toLowerCase().includes(q) ||
-        profile.phone.toLowerCase().includes(q) ||
-        profile.location.toLowerCase().includes(q) ||
-        profile.highestDegree.toLowerCase().includes(q) ||
-        profile.extractedSkills.some(s => s.toLowerCase().includes(q));
+        (profile.fullName || '').toLowerCase().includes(q) ||
+        (profile.email || '').toLowerCase().includes(q) ||
+        (profile.phone || '').toLowerCase().includes(q) ||
+        (profile.location || '').toLowerCase().includes(q) ||
+        (profile.highestDegree || '').toLowerCase().includes(q) ||
+        (profile.extractedSkills || []).some(s => s && s.toLowerCase().includes(q));
 
       // Skill Filter
       const matchesSkill = skillFilter === 'ALL' || 
-        profile.extractedSkills.some(s => s.toLowerCase() === skillFilter.toLowerCase());
+        (profile.extractedSkills || []).some(s => s && s.toLowerCase() === skillFilter.toLowerCase());
 
       // Status filter
       let matchesStatus = true;
@@ -242,7 +250,7 @@ export const CandidateAccountsManager: FC<CandidateAccountsManagerProps> = ({
       if (parsed.highestDegree !== 'Not detected') detectedDeg = parsed.highestDegree;
     }
 
-    onAdminCreateCandidate({
+    handleCreateAction({
       name: createName.trim(),
       email: createEmail.trim().toLowerCase(),
       phone: createPhone.trim(),
@@ -292,7 +300,7 @@ export const CandidateAccountsManager: FC<CandidateAccountsManagerProps> = ({
             <span className="text-xs font-semibold text-slate-500">Total Applications</span>
             <Briefcase className="w-4 h-4 text-purple-600" />
           </div>
-          <div className="text-2xl font-black text-slate-900">{applications.length}</div>
+          <div className="text-2xl font-black text-slate-900">{(applications || []).length}</div>
           <p className="text-[10px] text-slate-400 mt-0.5">Submitted by candidates</p>
         </div>
 
@@ -302,7 +310,7 @@ export const CandidateAccountsManager: FC<CandidateAccountsManagerProps> = ({
             <Sparkles className="w-4 h-4 text-amber-600" />
           </div>
           <div className="text-2xl font-black text-slate-900">
-            {new Set(candidates.flatMap(c => c.extractedSkills || [])).size}
+            {new Set((candidates || []).flatMap(c => c?.extractedSkills || [])).size}
           </div>
           <p className="text-[10px] text-slate-400 mt-0.5">Distinct candidate skills</p>
         </div>
@@ -346,7 +354,7 @@ export const CandidateAccountsManager: FC<CandidateAccountsManagerProps> = ({
               className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-700 font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
               <option value="ALL">Filter by Skill: All</option>
-              {knownSkills.slice(0, 30).map(s => (
+              {(knownSkills || []).slice(0, 30).map(s => (
                 <option key={s.id} value={s.name}>{s.name}</option>
               ))}
             </select>
@@ -506,7 +514,7 @@ export const CandidateAccountsManager: FC<CandidateAccountsManagerProps> = ({
                             {userApps.slice(0, 2).map(app => (
                               <div key={app.id} className="text-[10px] text-slate-600 flex items-center justify-between">
                                 <span className="truncate max-w-[120px]">{app.jobTitle}</span>
-                                <span className="font-bold text-slate-800 ml-1">{app.scoreBreakdown.overallScore}%</span>
+                                <span className="font-bold text-slate-800 ml-1">{app.scoreBreakdown?.overallScore ?? 0}%</span>
                               </div>
                             ))}
                           </div>

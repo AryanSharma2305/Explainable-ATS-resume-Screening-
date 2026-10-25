@@ -5,14 +5,16 @@ import { Briefcase, GraduationCap, Sparkles, LogOut, Crown } from 'lucide-react'
 interface NavbarProps {
   currentUser: User;
   onLogout: () => void;
+  onOpenStorageExplorer?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
   currentUser,
-  onLogout
+  onLogout,
+  onOpenStorageExplorer
 }) => {
-  const isAdmin = currentUser.role === 'ADMIN';
-  const isRecruiter = currentUser.role === 'RECRUITER';
+  const isAdmin = currentUser.role?.toUpperCase() === 'ADMIN' || currentUser.email?.toLowerCase() === 'admin@gmail.com';
+  const isRecruiter = !isAdmin && currentUser.role?.toUpperCase() === 'RECRUITER';
 
   return (
     <header className="bg-slate-900 text-white border-b border-slate-800 sticky top-0 z-40 shadow-md">
@@ -50,9 +52,9 @@ export const Navbar: React.FC<NavbarProps> = ({
           </div>
         </div>
 
-        {/* User Profile Info & Logout */}
-        <div className="flex items-center space-x-3">
-          
+        {/* User Profile Info & Actions */}
+        <div className="flex items-center space-x-2.5 sm:space-x-3">
+
           {/* Current User Badge */}
           <div className="flex items-center space-x-2.5 bg-slate-800/80 border border-slate-700/80 px-3 py-1.5 rounded-xl">
             <div className={`w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold text-white shadow-sm ${

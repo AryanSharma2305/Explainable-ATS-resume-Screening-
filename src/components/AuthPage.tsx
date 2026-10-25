@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { User, UserRole } from '../types';
+import { User, UserRole, CandidateProfile } from '../types';
+import { INITIAL_USERS } from '../services/seedData';
 import { 
   Sparkles, 
   Briefcase, 
@@ -10,19 +11,23 @@ import {
   Lock, 
   Mail, 
   User as UserIcon, 
-  Building2 
+  Building2,
+  RefreshCw,
+  Crown
 } from 'lucide-react';
 
 interface AuthPageProps {
   onLogin: (user: User) => void;
   onRegister: (newUser: User) => void;
   existingUsers: User[];
+  onOpenStorageExplorer?: () => void;
 }
 
 export const AuthPage: React.FC<AuthPageProps> = ({
   onLogin,
   onRegister,
-  existingUsers
+  existingUsers,
+  onOpenStorageExplorer
 }) => {
   const [activeTab, setActiveTab] = useState<'login' | 'signup'>('login');
   
@@ -30,6 +35,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [loginError, setLoginError] = useState<string | null>(null);
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
 
   // Sign up form state (Only public roles: Candidate or Company/HR)
   const [signupName, setSignupName] = useState('');
@@ -38,30 +44,69 @@ export const AuthPage: React.FC<AuthPageProps> = ({
   const [signupRole, setSignupRole] = useState<UserRole>('CANDIDATE');
   const [signupCompany, setSignupCompany] = useState('');
   const [signupError, setSignupError] = useState<string | null>(null);
+  const [isSigningUp, setIsSigningUp] = useState(false);
 
-  const handleLoginSubmit = (e: React.FormEvent) => {
+  const fillQuickCredentials = (email: string, pass: string) => {
+    setActiveTab('login');
+    setLoginEmail(email);
+    setLoginPassword(pass);
+    setLoginError(null);
+  };
+
+  const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoginError(null);
+    setIsLoggingIn(true);
 
     const emailTrimmed = loginEmail.trim().toLowerCase();
-    const user = existingUsers.find(
-      u => u.email.trim().toLowerCase() === emailTrimmed
+
+    // 1. Search in existingUsers passed from App state
+    let user = (existingUsers || []).find(
+      u => u.email?.trim().toLowerCase() === emailTrimmed
     );
 
+    // 2. Search in INITIAL_USERS fallback (guarantees aryanmsharma23@gmail.com and admin@gmail.com always exist)
     if (!user) {
-      setLoginError('No account found with this email address. Please check your credentials or create an account.');
+      user = INITIAL_USERS.find(
+        u => u.email.trim().toLowerCase() === emailTrimmed
+      );
+    }
+
+    // 3. Fallback to server endpoint /api/auth/login querying persistent disk file
+    if (!user) {
+      try {
+        const res = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: emailTrimmed, password: loginPassword })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.success && data.user) {
+            user = data.user;
+          }
+        }
+      } catch (err) {
+        console.warn('Backend login fallback lookup failed:', err);
+      }
+    }
+
+    setIsLoggingIn(false);
+
+    if (!user) {
+      setLoginError('No account found with this email address. Please check your credentials or create a new account.');
       return;
     }
 
     if (user.password && user.password !== loginPassword) {
-      setLoginError('Incorrect password. Please try again.');
+      setLoginError('Incorrect password. Please verify your password and try again.');
       return;
     }
 
     onLogin(user);
   };
 
-  const handleSignupSubmit = (e: React.FormEvent) => {
+  const handleSignupSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSignupError(null);
 
@@ -85,19 +130,22 @@ export const AuthPage: React.FC<AuthPageProps> = ({
       return;
     }
 
-    const emailExists = existingUsers.some(
-      u => u.email.trim().toLowerCase() === signupEmail.trim().toLowerCase()
+    const emailTrimmed = signupEmail.trim().toLowerCase();
+    const emailExists = (existingUsers || []).some(
+      u => u.email?.trim().toLowerCase() === emailTrimmed
     );
 
     if (emailExists) {
-      setSignupError('An account with this email already exists. Please sign in.');
+      setSignupError('An account with this email already exists. Please sign in instead.');
       return;
     }
+
+    setIsSigningUp(true);
 
     const newUser: User = {
       id: `user-${Date.now()}`,
       name: signupName.trim(),
-      email: signupEmail.trim().toLowerCase(),
+      email: emailTrimmed,
       password: signupPassword,
       role: signupRole,
       companyName: signupRole === 'RECRUITER' ? signupCompany.trim() : undefined,
@@ -109,6 +157,38 @@ export const AuthPage: React.FC<AuthPageProps> = ({
         : 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80'
     };
 
+    // Candidate profile if role is CANDIDATE
+    const newCandidateProfile: CandidateProfile | undefined = signupRole === 'CANDIDATE' ? {
+      id: `cand-${newUser.id}`,
+      userId: newUser.id,
+      fullName: newUser.name,
+      email: newUser.email,
+      phone: '',
+      location: '',
+      summary: '',
+      rawResumeText: '',
+      extractedSkills: [],
+      education: [],
+      experience: [],
+      projects: [],
+      certifications: [],
+      totalExpYears: 0,
+      highestDegree: 'Bachelor Degree',
+      updatedAt: new Date().toISOString().split('T')[0]
+    } : undefined;
+
+    // Immediately persist directly to server disk storage for 30-day retention
+    try {
+      await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user: newUser, candidateProfile: newCandidateProfile })
+      });
+    } catch (err) {
+      console.warn('Direct server registration sync notice:', err);
+    }
+
+    setIsSigningUp(false);
     onRegister(newUser);
   };
 
@@ -134,9 +214,11 @@ export const AuthPage: React.FC<AuthPageProps> = ({
               </p>
             </div>
           </div>
-          <div className="flex items-center space-x-2 text-xs text-slate-400 bg-slate-800/80 px-3 py-1.5 rounded-xl border border-slate-700/80">
-            <ShieldCheck className="w-4 h-4 text-emerald-400" />
-            <span>Secure Authentication</span>
+          <div className="flex items-center space-x-3">
+            <div className="flex items-center space-x-2 text-xs text-slate-400 bg-slate-800/80 px-3 py-1.5 rounded-xl border border-slate-700/80">
+              <ShieldCheck className="w-4 h-4 text-emerald-400" />
+              <span>Secure Authentication</span>
+            </div>
           </div>
         </div>
       </header>
@@ -235,6 +317,51 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                 </div>
               )}
 
+              {/* Quick Fill Demo Credentials */}
+              <div className="bg-slate-900/90 border border-slate-800 p-3 rounded-2xl space-y-2">
+                <div className="flex items-center justify-between text-[11px]">
+                  <span className="text-slate-400 font-semibold flex items-center space-x-1">
+                    <Sparkles className="w-3 h-3 text-emerald-400" />
+                    <span>Quick Fill Credentials:</span>
+                  </span>
+                  <span className="text-[10px] text-emerald-400 bg-emerald-950/60 border border-emerald-800/60 px-2 py-0.5 rounded-full font-mono">
+                    30-Day Retained
+                  </span>
+                </div>
+                <div className="grid grid-cols-3 gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => fillQuickCredentials('aryanmsharma23@gmail.com', 'password123')}
+                    className="bg-slate-800 hover:bg-emerald-950/70 border border-slate-700 hover:border-emerald-600/50 p-1.5 rounded-xl text-left transition-all group"
+                  >
+                    <div className="text-[10px] font-bold text-emerald-300 flex items-center space-x-1">
+                      <span>Candidate</span>
+                    </div>
+                    <div className="text-[9px] text-slate-400 truncate">aryanmsharma23@...</div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => fillQuickCredentials('admin@gmail.com', 'admin123')}
+                    className="bg-slate-800 hover:bg-purple-950/70 border border-slate-700 hover:border-purple-600/50 p-1.5 rounded-xl text-left transition-all group"
+                  >
+                    <div className="text-[10px] font-bold text-purple-300 flex items-center space-x-1">
+                      <span>Admin</span>
+                    </div>
+                    <div className="text-[9px] text-slate-400 truncate">admin@gmail.com</div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => fillQuickCredentials('recruiter@techcorp.com', 'password123')}
+                    className="bg-slate-800 hover:bg-indigo-950/70 border border-slate-700 hover:border-indigo-600/50 p-1.5 rounded-xl text-left transition-all group"
+                  >
+                    <div className="text-[10px] font-bold text-indigo-300 flex items-center space-x-1">
+                      <span>HR / Co.</span>
+                    </div>
+                    <div className="text-[9px] text-slate-400 truncate">recruiter@techcorp...</div>
+                  </button>
+                </div>
+              </div>
+
               <div>
                 <label className="block text-xs font-semibold text-slate-300 mb-1.5">Email Address</label>
                 <div className="relative">
@@ -267,10 +394,20 @@ export const AuthPage: React.FC<AuthPageProps> = ({
 
               <button
                 type="submit"
-                className="w-full bg-gradient-to-r from-indigo-600 to-emerald-600 hover:from-indigo-500 hover:to-emerald-500 text-white font-bold text-xs py-3 rounded-xl transition-all shadow-md flex items-center justify-center space-x-1.5 mt-2"
+                disabled={isLoggingIn}
+                className="w-full bg-gradient-to-r from-indigo-600 to-emerald-600 hover:from-indigo-500 hover:to-emerald-500 disabled:opacity-60 text-white font-bold text-xs py-3 rounded-xl transition-all shadow-md flex items-center justify-center space-x-1.5 mt-2"
               >
-                <span>Sign In to Account</span>
-                <ArrowRight className="w-4 h-4" />
+                {isLoggingIn ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    <span>Verifying Credentials...</span>
+                  </>
+                ) : (
+                  <>
+                    <span>Sign In to Account</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </>
+                )}
               </button>
             </form>
           )}
