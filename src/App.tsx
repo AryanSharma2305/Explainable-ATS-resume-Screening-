@@ -35,6 +35,63 @@ import { SoftwareOwnerDashboard } from './components/SoftwareOwnerDashboard';
 import { DataStorageExplorerModal } from './components/DataStorageExplorerModal';
 import { fetchServerStorage, syncStorageToServer, StoragePayload } from './services/storageService';
 
+// Helper to guarantee bidirectional consistency between users and candidate profiles
+function reconcileUsersAndCandidates(inputUsers: User[], inputCandidates: CandidateProfile[]) {
+  const safeUsers = [...inputUsers];
+  const safeCandidates = [...inputCandidates];
+
+  // 1. Ensure all candidate profiles have a corresponding user account
+  safeCandidates.forEach(cand => {
+    if (!cand || !cand.email) return;
+    const emailLower = cand.email.trim().toLowerCase();
+    const userExists = safeUsers.some(u => u && u.email && u.email.trim().toLowerCase() === emailLower);
+    if (!userExists) {
+      safeUsers.push({
+        id: cand.userId || `user-cand-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        name: cand.fullName || 'Candidate',
+        email: emailLower,
+        password: 'password123',
+        role: 'CANDIDATE',
+        title: cand.summary || 'Job Seeker',
+        status: 'active',
+        avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
+        createdAt: cand.updatedAt || '2026-08-01'
+      });
+    }
+  });
+
+  // 2. Ensure all CANDIDATE users have a candidate profile
+  safeUsers.forEach(u => {
+    if (!u || !u.email) return;
+    if (u.role?.toUpperCase() === 'CANDIDATE') {
+      const emailLower = u.email.trim().toLowerCase();
+      const profExists = safeCandidates.some(c => c && c.email && c.email.trim().toLowerCase() === emailLower);
+      if (!profExists) {
+        safeCandidates.push({
+          id: `cand-${u.id}`,
+          userId: u.id,
+          fullName: u.name || 'Candidate',
+          email: emailLower,
+          phone: '',
+          location: '',
+          summary: u.title || 'Job Seeker',
+          rawResumeText: '',
+          extractedSkills: [],
+          education: [],
+          experience: [],
+          projects: [],
+          certifications: [],
+          totalExpYears: 0,
+          highestDegree: 'Bachelor Degree',
+          updatedAt: new Date().toISOString().split('T')[0]
+        });
+      }
+    }
+  });
+
+  return { users: safeUsers, candidates: safeCandidates };
+}
+
 export default function App() {
   // Stored Users (Reconciled with initial users)
   const [users, setUsers] = useState<User[]>(() => {
@@ -85,12 +142,16 @@ export default function App() {
       });
     }
 
-    // Always normalize all user roles to uppercase
+    // Always normalize all user roles to uppercase and ensure password default
     return loadedUsers.map(u => ({
       ...u,
+      password: u.password || 'password123',
       role: (u.email?.toLowerCase() === 'admin@gmail.com' ? 'ADMIN' : (u.role?.toUpperCase() as UserRole) || 'CANDIDATE')
     }));
   });
+
+  // Track if server storage has loaded to prevent accidental overwrite
+  const [hasServerLoaded, setHasServerLoaded] = useState(false);
 
   // Storage Explorer Modal State (30-day retention viewer)
   const [isStorageExplorerOpen, setIsStorageExplorerOpen] = useState(false);
@@ -218,49 +279,48 @@ export default function App() {
   // Initial Server Sync on Mount
   useEffect(() => {
     fetchServerStorage().then(serverData => {
+      setHasServerLoaded(true);
       if (!serverData) return;
-      if (serverData.users && serverData.users.length > 0) {
-        setUsers(prev => {
-          const map = new Map<string, User>();
-          // 1. Initial users baseline
-          INITIAL_USERS.forEach(u => map.set(u.email.toLowerCase(), u));
-          // 2. Client prev state
-          prev.forEach(u => map.set(u.email.toLowerCase(), u));
-          // 3. Authoritative server disk state
-          serverData.users.forEach(u => map.set(u.email.toLowerCase(), u));
 
-          // Guarantee aryanmsharma23@gmail.com and admin@gmail.com always exist with valid credentials
-          if (!map.has('aryanmsharma23@gmail.com')) {
-            const aryan = INITIAL_USERS.find(u => u.email.toLowerCase() === 'aryanmsharma23@gmail.com');
-            if (aryan) map.set('aryanmsharma23@gmail.com', aryan);
-          }
-          if (!map.has('admin@gmail.com')) {
-            const admin = INITIAL_USERS.find(u => u.email.toLowerCase() === 'admin@gmail.com');
-            if (admin) map.set('admin@gmail.com', admin);
-          }
-          return Array.from(map.values());
-        });
+      let combinedUsers = [...users];
+      if (serverData.users && serverData.users.length > 0) {
+        const map = new Map<string, User>();
+        // 1. Initial users baseline
+        INITIAL_USERS.forEach(u => map.set(u.email.toLowerCase(), { ...u, password: u.password || 'password123' }));
+        // 2. Client prev state
+        combinedUsers.forEach(u => map.set(u.email.toLowerCase(), { ...u, password: u.password || 'password123' }));
+        // 3. Authoritative server disk state
+        serverData.users.forEach(u => map.set(u.email.toLowerCase(), { ...u, password: u.password || 'password123' }));
+
+        combinedUsers = Array.from(map.values());
       }
+
+      let combinedCandidates = [...candidates];
+      if (serverData.candidates && serverData.candidates.length > 0) {
+        const map = new Map<string, CandidateProfile>();
+        INITIAL_CANDIDATES.forEach(c => map.set(c.email.toLowerCase(), c));
+        combinedCandidates.forEach(c => map.set(c.email.toLowerCase(), c));
+        serverData.candidates.forEach(c => map.set(c.email.toLowerCase(), c));
+        combinedCandidates = Array.from(map.values());
+      }
+
+      // Bidirectional reconciliation
+      const reconciled = reconcileUsersAndCandidates(combinedUsers, combinedCandidates);
+      setUsers(reconciled.users);
+      setCandidates(reconciled.candidates);
+
       if (serverData.companies && serverData.companies.length > 0) {
         setCompanies(serverData.companies);
       }
       if (serverData.jobs && serverData.jobs.length > 0) {
         setJobs(serverData.jobs);
       }
-      if (serverData.candidates && serverData.candidates.length > 0) {
-        setCandidates(prev => {
-          const map = new Map<string, CandidateProfile>();
-          INITIAL_CANDIDATES.forEach(c => map.set(c.email.toLowerCase(), c));
-          prev.forEach(c => map.set(c.email.toLowerCase(), c));
-          serverData.candidates.forEach(c => map.set(c.email.toLowerCase(), c));
-          return Array.from(map.values());
-        });
-      }
       if (serverData.applications && serverData.applications.length > 0) {
         setApplications(serverData.applications);
       }
     }).catch(err => {
       console.warn('Initial server sync warning:', err);
+      setHasServerLoaded(true);
     });
   }, []);
 
@@ -286,6 +346,9 @@ export default function App() {
     localStorage.setItem('ats_candidates', JSON.stringify(candidates));
     localStorage.setItem('ats_applications', JSON.stringify(applications));
 
+    // Guard: Only sync state to server after initial server load has succeeded to prevent overwriting disk
+    if (!hasServerLoaded) return;
+
     // Save to persistent server file database
     const timer = setTimeout(() => {
       syncStorageToServer({
@@ -305,7 +368,7 @@ export default function App() {
     }, 600);
 
     return () => clearTimeout(timer);
-  }, [users, companies, currentUser, skills, relationships, weights, thresholds, projectRules, courses, jobs, candidates, applications, auditLogs]);
+  }, [hasServerLoaded, users, companies, currentUser, skills, relationships, weights, thresholds, projectRules, courses, jobs, candidates, applications, auditLogs]);
 
   // Log Helper
   const addAuditLog = (action: string, details: string) => {
@@ -327,19 +390,36 @@ export default function App() {
         : user.role?.toUpperCase() === 'RECRUITER'
         ? 'RECRUITER'
         : 'CANDIDATE';
-    const normalizedUser: User = { ...user, role: effectiveRole };
+    const normalizedUser: User = { 
+      ...user, 
+      role: effectiveRole,
+      password: user.password || 'password123'
+    };
+
+    // Ensure user is immediately saved in users state
+    setUsers(prev => {
+      const idx = prev.findIndex(u => u.email.toLowerCase() === normalizedUser.email.toLowerCase());
+      if (idx >= 0) {
+        const copy = [...prev];
+        copy[idx] = { ...copy[idx], ...normalizedUser };
+        return copy;
+      }
+      return [...prev, normalizedUser];
+    });
+
     setCurrentUser(normalizedUser);
+
     if (effectiveRole === 'CANDIDATE') {
       const existing = candidates.find(c => c.userId === user.id || c.email.toLowerCase() === user.email.toLowerCase());
       if (!existing) {
         const newProfile: CandidateProfile = {
           id: `cand-${user.id}`,
           userId: user.id,
-          fullName: user.name,
+          fullName: user.name || 'Candidate',
           email: user.email,
           phone: '',
           location: '',
-          summary: '',
+          summary: user.title || 'Job Seeker',
           rawResumeText: '',
           extractedSkills: [],
           education: [],
@@ -357,7 +437,12 @@ export default function App() {
   };
 
   const handleRegister = (newUser: User) => {
-    setUsers(prev => [...prev, newUser]);
+    const safeUser: User = {
+      ...newUser,
+      password: newUser.password || 'password123',
+      role: newUser.role?.toUpperCase() as UserRole || 'CANDIDATE'
+    };
+    setUsers(prev => [...prev, safeUser]);
     if (newUser.role === 'CANDIDATE') {
       const newProfile: CandidateProfile = {
         id: `cand-${newUser.id}`,
@@ -626,6 +711,7 @@ export default function App() {
           onLogin={handleLogin}
           onRegister={handleRegister}
           existingUsers={users}
+          existingCandidates={candidates}
           onOpenStorageExplorer={() => setIsStorageExplorerOpen(true)}
         />
         <DataStorageExplorerModal

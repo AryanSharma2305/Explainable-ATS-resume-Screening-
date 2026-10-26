@@ -102,14 +102,54 @@ async function startServer() {
   // POST /api/storage - Save / sync entire application state with 30-day retention
   app.post('/api/storage', (req, res) => {
     try {
-      const payload = req.body;
+      const payload = req.body || {};
       const now = new Date();
       // Retention: 30 Days (1 Month) from now
       const retentionDays = 30;
       const expiresAt = new Date(now.getTime() + retentionDays * 24 * 60 * 60 * 1000).toISOString();
 
+      let currentFileDoc: any = {};
+      if (fs.existsSync(DATA_FILE)) {
+        try {
+          currentFileDoc = JSON.parse(fs.readFileSync(DATA_FILE, 'utf-8'));
+        } catch (e) {
+          console.error('[Server Storage] Error parsing existing DATA_FILE:', e);
+        }
+      }
+
+      // Safely merge users so existing accounts are never wiped out by partial client state
+      const userMap = new Map<string, any>();
+      INITIAL_USERS.forEach(u => userMap.set(u.email.toLowerCase(), { ...u, password: u.password || 'password123' }));
+      (currentFileDoc.users || []).forEach((u: any) => {
+        if (u && u.email) userMap.set(u.email.toLowerCase(), { ...u, password: u.password || 'password123' });
+      });
+      (payload.users || []).forEach((u: any) => {
+        if (u && u.email) {
+          const prev = userMap.get(u.email.toLowerCase()) || {};
+          userMap.set(u.email.toLowerCase(), { ...prev, ...u, password: u.password || prev.password || 'password123' });
+        }
+      });
+      const mergedUsers = Array.from(userMap.values());
+
+      // Safely merge candidates
+      const candMap = new Map<string, any>();
+      INITIAL_CANDIDATES.forEach(c => candMap.set(c.email.toLowerCase(), c));
+      (currentFileDoc.candidates || []).forEach((c: any) => {
+        if (c && c.email) candMap.set(c.email.toLowerCase(), c);
+      });
+      (payload.candidates || []).forEach((c: any) => {
+        if (c && c.email) {
+          const prev = candMap.get(c.email.toLowerCase()) || {};
+          candMap.set(c.email.toLowerCase(), { ...prev, ...c });
+        }
+      });
+      const mergedCandidates = Array.from(candMap.values());
+
       const document = {
+        ...currentFileDoc,
         ...payload,
+        users: mergedUsers,
+        candidates: mergedCandidates,
         lastUpdated: now.toISOString(),
         expiresAt,
         retentionDays,
@@ -118,13 +158,15 @@ async function startServer() {
       };
 
       fs.writeFileSync(DATA_FILE, JSON.stringify(document, null, 2), 'utf-8');
-      console.log(`[Server Storage] Saved database with ${document.users?.length || 0} users, expires at ${expiresAt}`);
+      console.log(`[Server Storage] Saved database with ${mergedUsers.length} users and ${mergedCandidates.length} candidates.`);
       
       return res.json({
         success: true,
         lastUpdated: document.lastUpdated,
         expiresAt: document.expiresAt,
-        retentionDays: 30
+        retentionDays: 30,
+        userCount: mergedUsers.length,
+        candidateCount: mergedCandidates.length
       });
     } catch (err: any) {
       console.error('[Server Storage] Error writing storage file:', err);
@@ -141,30 +183,58 @@ async function startServer() {
       }
       const emailNorm = email.trim().toLowerCase();
 
-      let storedUsers = INITIAL_USERS;
+      let storedUsers: any[] = [...INITIAL_USERS];
+      let storedCandidates: any[] = [...INITIAL_CANDIDATES];
       let fileDoc: any = null;
+
       if (fs.existsSync(DATA_FILE)) {
         try {
           fileDoc = JSON.parse(fs.readFileSync(DATA_FILE, 'utf-8'));
-          if (Array.isArray(fileDoc.users) && fileDoc.users.length > 0) {
-            storedUsers = fileDoc.users;
+          if (Array.isArray(fileDoc.users)) {
+            storedUsers = [...storedUsers, ...fileDoc.users];
+          }
+          if (Array.isArray(fileDoc.candidates)) {
+            storedCandidates = [...storedCandidates, ...fileDoc.candidates];
           }
         } catch (e) {
-          console.error('[Auth] Error reading DATA_FILE:', e);
+          console.error('[Auth] Error reading DATA_FILE in login:', e);
         }
       }
 
-      // Look up user in disk storage
-      let user = storedUsers.find((u: any) => u.email?.trim().toLowerCase() === emailNorm);
+      // 1. Look up user by email in storedUsers
+      let user = storedUsers.find((u: any) => u && u.email && u.email.trim().toLowerCase() === emailNorm);
 
-      // If not in disk storage, check INITIAL_USERS (e.g. aryanmsharma23@gmail.com, admin@gmail.com)
+      // 2. If not found in users, check candidate profiles
+      if (!user) {
+        const candidateProf = storedCandidates.find((c: any) => c && c.email && c.email.trim().toLowerCase() === emailNorm);
+        if (candidateProf) {
+          user = {
+            id: candidateProf.userId || `user-cand-${Date.now()}`,
+            name: candidateProf.fullName || 'Candidate',
+            email: emailNorm,
+            password: 'password123',
+            role: 'CANDIDATE',
+            title: candidateProf.summary || 'Job Seeker',
+            status: 'active',
+            avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
+            createdAt: candidateProf.updatedAt || new Date().toISOString().split('T')[0]
+          };
+
+          // Save synthesized user into fileDoc so it's permanently stored
+          if (fileDoc) {
+            fileDoc.users = [...(fileDoc.users || []), user];
+            fs.writeFileSync(DATA_FILE, JSON.stringify(fileDoc, null, 2), 'utf-8');
+          }
+        }
+      }
+
+      // 3. Fallback for aryanmsharma23@gmail.com and admin@gmail.com default seeds
       if (!user) {
         const seedUser = INITIAL_USERS.find(u => u.email.trim().toLowerCase() === emailNorm);
         if (seedUser) {
-          user = seedUser;
-          // Seed permanently into DATA_FILE so account is never lost
+          user = { ...seedUser, password: seedUser.password || 'password123' };
           if (fileDoc) {
-            fileDoc.users = [...(fileDoc.users || []), seedUser];
+            fileDoc.users = [...(fileDoc.users || []), user];
             fs.writeFileSync(DATA_FILE, JSON.stringify(fileDoc, null, 2), 'utf-8');
           }
         }
@@ -174,11 +244,19 @@ async function startServer() {
         return res.status(404).json({ success: false, error: 'No account found with this email address.' });
       }
 
-      if (password && user.password && user.password !== password) {
-        return res.status(401).json({ success: false, error: 'Incorrect password. Please try again.' });
+      // Normalize user role and password
+      const normalizedUser = {
+        ...user,
+        role: user.email.toLowerCase() === 'admin@gmail.com' ? 'ADMIN' : (user.role?.toUpperCase() || 'CANDIDATE'),
+        password: user.password || 'password123'
+      };
+
+      const expectedPassword = normalizedUser.password;
+      if (password && expectedPassword && expectedPassword !== password) {
+        return res.status(401).json({ success: false, error: 'Incorrect password. Please verify your password and try again.' });
       }
 
-      return res.json({ success: true, user });
+      return res.json({ success: true, user: normalizedUser });
     } catch (err: any) {
       console.error('[Auth] Login error:', err);
       return res.status(500).json({ success: false, error: err.message });
@@ -217,24 +295,36 @@ async function startServer() {
       }
 
       const emailNorm = user.email.trim().toLowerCase();
+      const safeUser = {
+        ...user,
+        email: emailNorm,
+        password: user.password || 'password123',
+        role: user.role?.toUpperCase() || 'CANDIDATE'
+      };
+
       const existingUserIdx = (fileDoc.users || []).findIndex(
         (u: any) => u.email?.trim().toLowerCase() === emailNorm
       );
 
       if (existingUserIdx >= 0) {
-        fileDoc.users[existingUserIdx] = { ...fileDoc.users[existingUserIdx], ...user };
+        fileDoc.users[existingUserIdx] = { ...fileDoc.users[existingUserIdx], ...safeUser };
       } else {
-        fileDoc.users = [...(fileDoc.users || []), user];
+        fileDoc.users = [...(fileDoc.users || []), safeUser];
       }
 
       if (candidateProfile) {
+        const safeCand = {
+          ...candidateProfile,
+          email: emailNorm,
+          fullName: candidateProfile.fullName || safeUser.name
+        };
         const candIdx = (fileDoc.candidates || []).findIndex(
-          (c: any) => c.userId === user.id || c.email?.trim().toLowerCase() === emailNorm
+          (c: any) => c.userId === safeUser.id || c.email?.trim().toLowerCase() === emailNorm
         );
         if (candIdx >= 0) {
-          fileDoc.candidates[candIdx] = { ...fileDoc.candidates[candIdx], ...candidateProfile };
+          fileDoc.candidates[candIdx] = { ...fileDoc.candidates[candIdx], ...safeCand };
         } else {
-          fileDoc.candidates = [...(fileDoc.candidates || []), candidateProfile];
+          fileDoc.candidates = [...(fileDoc.candidates || []), safeCand];
         }
       }
 
@@ -244,9 +334,9 @@ async function startServer() {
       fileDoc.retentionDays = 30;
 
       fs.writeFileSync(DATA_FILE, JSON.stringify(fileDoc, null, 2), 'utf-8');
-      console.log(`[Auth] Registered & stored user ${user.email} (expires in 30 days)`);
+      console.log(`[Auth] Registered & stored user ${safeUser.email} (expires in 30 days)`);
 
-      return res.json({ success: true, user, message: 'Account saved to 30-day persistent disk storage.' });
+      return res.json({ success: true, user: safeUser, message: 'Account saved to 30-day persistent disk storage.' });
     } catch (err: any) {
       console.error('[Auth] Register error:', err);
       return res.status(500).json({ success: false, error: err.message });

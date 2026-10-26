@@ -20,6 +20,7 @@ interface AuthPageProps {
   onLogin: (user: User) => void;
   onRegister: (newUser: User) => void;
   existingUsers: User[];
+  existingCandidates?: CandidateProfile[];
   onOpenStorageExplorer?: () => void;
 }
 
@@ -27,6 +28,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
   onLogin,
   onRegister,
   existingUsers,
+  existingCandidates = [],
   onOpenStorageExplorer
 }) => {
   const [activeTab, setActiveTab] = useState<'login' | 'signup'>('login');
@@ -62,43 +64,64 @@ export const AuthPage: React.FC<AuthPageProps> = ({
 
     // 1. Search in existingUsers passed from App state
     let user = (existingUsers || []).find(
-      u => u.email?.trim().toLowerCase() === emailTrimmed
+      u => u && u.email && u.email.trim().toLowerCase() === emailTrimmed
     );
 
-    // 2. Search in INITIAL_USERS fallback (guarantees aryanmsharma23@gmail.com and admin@gmail.com always exist)
+    // 2. Search in existingCandidates passed from App state (auto-link candidate profile)
+    if (!user && existingCandidates && existingCandidates.length > 0) {
+      const cand = existingCandidates.find(
+        c => c && c.email && c.email.trim().toLowerCase() === emailTrimmed
+      );
+      if (cand) {
+        user = {
+          id: cand.userId || `user-cand-${Date.now()}`,
+          name: cand.fullName || 'Candidate',
+          email: emailTrimmed,
+          password: 'password123',
+          role: 'CANDIDATE',
+          title: cand.summary || 'Job Seeker',
+          status: 'active',
+          avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
+          createdAt: cand.updatedAt || '2026-08-01'
+        };
+      }
+    }
+
+    // 3. Search in INITIAL_USERS fallback
     if (!user) {
       user = INITIAL_USERS.find(
-        u => u.email.trim().toLowerCase() === emailTrimmed
+        u => u && u.email && u.email.trim().toLowerCase() === emailTrimmed
       );
     }
 
-    // 3. Fallback to server endpoint /api/auth/login querying persistent disk file
-    if (!user) {
-      try {
-        const res = await fetch('/api/auth/login', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email: emailTrimmed, password: loginPassword })
-        });
-        if (res.ok) {
-          const data = await res.json();
-          if (data.success && data.user) {
-            user = data.user;
-          }
-        }
-      } catch (err) {
-        console.warn('Backend login fallback lookup failed:', err);
+    // 4. Query backend /api/auth/login endpoint (persisted disk file)
+    let serverErrorMessage: string | null = null;
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: emailTrimmed, password: loginPassword })
+      });
+      const data = await res.json();
+      if (res.ok && data.success && data.user) {
+        user = data.user;
+      } else if (!res.ok && data.error) {
+        serverErrorMessage = data.error;
       }
+    } catch (err) {
+      console.warn('Backend login fallback lookup failed:', err);
     }
 
     setIsLoggingIn(false);
 
     if (!user) {
-      setLoginError('No account found with this email address. Please check your credentials or create a new account.');
+      setLoginError(serverErrorMessage || 'No account found with this email address. Please check your credentials or create a new account.');
       return;
     }
 
-    if (user.password && user.password !== loginPassword) {
+    // Verify password with default fallback to password123
+    const expectedPassword = user.password || 'password123';
+    if (loginPassword && expectedPassword !== loginPassword) {
       setLoginError('Incorrect password. Please verify your password and try again.');
       return;
     }

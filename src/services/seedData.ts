@@ -109,6 +109,39 @@ export const INITIAL_USERS: User[] = [
     status: 'active',
     avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
     createdAt: '2026-08-01'
+  },
+  {
+    id: 'user-cand-3',
+    name: 'Aryan Sharma (Candidate A)',
+    email: 'aryan.sharma@example.com',
+    password: 'password123',
+    role: 'CANDIDATE',
+    title: 'Python Backend Engineer',
+    status: 'active',
+    avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
+    createdAt: '2026-08-01'
+  },
+  {
+    id: 'user-cand-4',
+    name: 'Rahul Verma (Candidate B)',
+    email: 'rahul.verma@example.com',
+    password: 'password123',
+    role: 'CANDIDATE',
+    title: 'Full Stack Java Engineer',
+    status: 'active',
+    avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&auto=format&fit=crop&q=80',
+    createdAt: '2026-08-01'
+  },
+  {
+    id: 'user-cand-5',
+    name: 'Aman Gupta (Candidate C)',
+    email: 'aman.gupta@example.com',
+    password: 'password123',
+    role: 'CANDIDATE',
+    title: 'Data & Cloud Engineer',
+    status: 'active',
+    avatar: 'https://images.unsplash.com/photo-1492562080023-ab3db95bfbce?w=150&auto=format&fit=crop&q=80',
+    createdAt: '2026-08-01'
   }
 ];
 
@@ -535,6 +568,114 @@ export const INITIAL_CANDIDATES: CandidateProfile[] = [
     projects: [],
     certifications: [],
     updatedAt: '2026-08-08'
+  },
+  {
+    id: 'cand-prof-3',
+    userId: 'user-cand-3',
+    fullName: 'Aryan Sharma (Candidate A)',
+    email: 'aryan.sharma@example.com',
+    phone: '+91 98765 43211',
+    location: 'Bangalore, India',
+    summary: 'Python Backend Engineer with expertise in Flask, Django, PostgreSQL, and Git.',
+    rawResumeText: 'Experienced Python developer specializing in Flask and Django web applications with relational databases.',
+    extractedSkills: ['Python', 'Flask', 'Django', 'SQL', 'Git'],
+    totalExpYears: 3.0,
+    highestDegree: 'B.Tech in Computer Science',
+    education: [
+      {
+        id: 'edu-3',
+        degree: 'B.Tech in Computer Science',
+        fieldOfStudy: 'Computer Science',
+        institution: 'VTU',
+        completionYear: 2023,
+        cgpaPercentage: '85%'
+      }
+    ],
+    experience: [
+      {
+        id: 'exp-3',
+        jobTitle: 'Backend Engineer',
+        company: 'CodeCraft Solutions',
+        years: 3.0,
+        responsibilities: 'Engineered REST APIs with Django and Flask.',
+        technologiesUsed: ['Python', 'Django', 'Flask', 'Git']
+      }
+    ],
+    projects: [],
+    certifications: [],
+    updatedAt: '2026-08-10'
+  },
+  {
+    id: 'cand-prof-4',
+    userId: 'user-cand-4',
+    fullName: 'Rahul Verma (Candidate B)',
+    email: 'rahul.verma@example.com',
+    phone: '+91 98765 43212',
+    location: 'Hyderabad, India',
+    summary: 'Full Stack Java Engineer with Spring Boot and React experience.',
+    rawResumeText: 'Java developer with Spring Boot microservices, MySQL database, and Git.',
+    extractedSkills: ['Java', 'Spring Boot', 'MySQL', 'Git'],
+    totalExpYears: 3.5,
+    highestDegree: 'B.Tech CSE',
+    education: [
+      {
+        id: 'edu-4',
+        degree: 'B.Tech CSE',
+        fieldOfStudy: 'Computer Science',
+        institution: 'JNTU',
+        completionYear: 2022,
+        cgpaPercentage: '80%'
+      }
+    ],
+    experience: [
+      {
+        id: 'exp-4',
+        jobTitle: 'Java Developer',
+        company: 'CloudWorks',
+        years: 3.5,
+        responsibilities: 'Built Spring Boot microservices and REST APIs.',
+        technologiesUsed: ['Java', 'Spring Boot', 'MySQL', 'Git']
+      }
+    ],
+    projects: [],
+    certifications: [],
+    updatedAt: '2026-08-10'
+  },
+  {
+    id: 'cand-prof-5',
+    userId: 'user-cand-5',
+    fullName: 'Aman Gupta (Candidate C)',
+    email: 'aman.gupta@example.com',
+    phone: '+91 98765 43213',
+    location: 'Pune, India',
+    summary: 'Python Data and Cloud Engineer with Pandas, Docker, and AWS skills.',
+    rawResumeText: 'Data Engineer with Python, Pandas, Docker, and SQL.',
+    extractedSkills: ['Python', 'Pandas', 'Docker', 'SQL', 'Git'],
+    totalExpYears: 2.5,
+    highestDegree: 'Bachelor of Science (Computer Science)',
+    education: [
+      {
+        id: 'edu-5',
+        degree: 'B.Sc Computer Science',
+        fieldOfStudy: 'Computer Science',
+        institution: 'Pune University',
+        completionYear: 2023,
+        cgpaPercentage: '78%'
+      }
+    ],
+    experience: [
+      {
+        id: 'exp-5',
+        jobTitle: 'Data Engineer',
+        company: 'DataMetrics',
+        years: 2.5,
+        responsibilities: 'Built data pipelines with Python, Pandas, and Docker.',
+        technologiesUsed: ['Python', 'Pandas', 'Docker', 'Git']
+      }
+    ],
+    projects: [],
+    certifications: [],
+    updatedAt: '2026-08-10'
   }
 ];
 
